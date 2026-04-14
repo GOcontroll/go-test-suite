@@ -62,7 +62,7 @@ jobs:
           Section: utils
           Priority: optional
           Homepage: https://gocontroll.com
-          Description: GOcontroll assembly test suite
+          Description: GOcontroll hardware test suite
            Post-assembly hardware test runner for GOcontroll Moduline controllers.
            Provides an interactive menu to select and run hardware tests, including
            CAN bus loopback tests for Moduline Mini, Moduline 4 and Moduline Display.
