@@ -39,6 +39,10 @@ jobs:
             "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/__init__.py"
           install -Dm644 go_test_suite/suite.py \
             "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/suite.py"
+          install -Dm644 go_test_suite/test_can.py \
+            "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/test_can.py"
+          install -Dm644 go_test_suite/test_leds.py \
+            "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/test_leds.py"
 
           # --- Entry point script -------------------------------------------------
           cat > "${BUILD}/usr/bin/go-test-suite" << 'EOF'
@@ -54,7 +58,7 @@ jobs:
           Version: ${VERSION}
           Architecture: ${ARCH}
           Maintainer: GOcontroll B.V. <info@gocontroll.com>
-          Depends: python3, go-test-can, go-leds
+          Depends: python3, python3-can, python3-netifaces, python3-smbus2
           Section: utils
           Priority: optional
           Homepage: https://gocontroll.com

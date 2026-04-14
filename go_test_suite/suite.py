@@ -4,6 +4,8 @@
 import subprocess
 import sys
 
+from go_test_suite import test_can, test_leds
+
 try:
     import tty
     import termios
@@ -16,11 +18,11 @@ _GREEN = "\033[92m"
 _RED   = "\033[91m"
 _RESET = "\033[0m"
 
-# Each entry: (display name, command, visual_confirm)
+# Each entry: (display name, function, visual_confirm)
 # visual_confirm=True: test has no automated pass/fail; user is asked after running.
 TESTS = [
-    ("CAN bus test  (can0 \u2194 can1,  can2 \u2194 can3)", "go-test-can",   False),
-    ("LED test  (4x RGB case LEDs)",                        "go-test-leds",  True),
+    ("CAN bus test  (can0 \u2194 can1,  can2 \u2194 can3)", test_can.run,   False),
+    ("LED test  (4x RGB case LEDs)",                        test_leds.run,  True),
 ]
 
 
@@ -141,24 +143,23 @@ def _confirm(prompt):
     return answer in ("y", "yes", "")
 
 
-def _run_test(name, command, visual_confirm=False):
+def _run_test(name, func, visual_confirm=False):
     print(f"\nRunning: {name}")
     print("-" * 40)
     if visual_confirm:
         print("  Watch the controller LEDs, then confirm below.")
         print()
-    result = subprocess.run([command])
-    if visual_confirm:
+        func()
         passed = _confirm("Did all LEDs flash red, green and blue correctly?")
     else:
-        passed = result.returncode == 0
+        passed = func()
     icon = f"{_GREEN}\u2713{_RESET}" if passed else f"{_RED}\u2717{_RESET}"
     print(f"\n  {icon}  {name}")
     return passed
 
 
 def _run_all():
-    results = [(name, _run_test(name, cmd, confirm)) for name, cmd, confirm in TESTS]
+    results = [(name, _run_test(name, func, confirm)) for name, func, confirm in TESTS]
     all_passed = all(passed for _, passed in results)
 
     print()
@@ -192,8 +193,8 @@ def main():
     if choice == len(TESTS):    # "Run all tests"
         passed = _run_all()
     else:
-        name, command, confirm = TESTS[choice]
-        passed = _run_test(name, command, confirm)
+        name, func, confirm = TESTS[choice]
+        passed = _run_test(name, func, confirm)
 
     sys.exit(0 if passed else 1)
 
