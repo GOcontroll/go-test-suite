@@ -42,27 +42,27 @@ jobs:
 
           # --- Entry point script -------------------------------------------------
           cat > "${BUILD}/usr/bin/go-test-suite" << 'EOF'
-#!/usr/bin/python3
-from go_test_suite.suite import main
-main()
-EOF
+          #!/usr/bin/python3
+          from go_test_suite.suite import main
+          main()
+          EOF
           chmod 755 "${BUILD}/usr/bin/go-test-suite"
 
           # --- DEBIAN/control -----------------------------------------------------
           cat > "${BUILD}/DEBIAN/control" << CONTROL
-Package: ${PACKAGE}
-Version: ${VERSION}
-Architecture: ${ARCH}
-Maintainer: GOcontroll B.V. <info@gocontroll.com>
-Depends: python3, go-test-can, go-leds
-Section: utils
-Priority: optional
-Homepage: https://gocontroll.com
-Description: GOcontroll assembly test suite
- Post-assembly hardware test runner for GOcontroll Moduline controllers.
- Provides an interactive menu to select and run hardware tests, including
- CAN bus loopback tests for Moduline Mini, Moduline 4 and Moduline Display.
-CONTROL
+          Package: ${PACKAGE}
+          Version: ${VERSION}
+          Architecture: ${ARCH}
+          Maintainer: GOcontroll B.V. <info@gocontroll.com>
+          Depends: python3, go-test-can, go-leds
+          Section: utils
+          Priority: optional
+          Homepage: https://gocontroll.com
+          Description: GOcontroll assembly test suite
+           Post-assembly hardware test runner for GOcontroll Moduline controllers.
+           Provides an interactive menu to select and run hardware tests, including
+           CAN bus loopback tests for Moduline Mini, Moduline 4 and Moduline Display.
+          CONTROL
 
           # --- Build --------------------------------------------------------------
           dpkg-deb -Zxz --build --root-owner-group "${BUILD}" \
