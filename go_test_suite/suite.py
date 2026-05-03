@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """GOcontroll Test Suite - post-assembly hardware test runner"""
 
+import os
+import select
 import sys
 
 from go_test_suite import __version__ as _PKG_VERSION
@@ -24,8 +26,8 @@ _SEP = "  ------------------------------------"
 
 # (display name, function, visual_confirm)
 TESTS = [
-    ("CAN bus test  (can0 ↔ can1,  can2 ↔ can3)", test_can.run,   False),
-    ("LED test  (4x RGB case LEDs)",                        test_leds.run,  True),
+    ("CAN tests", test_can.run,  False),
+    ("LED test",  test_leds.run, True),
 ]
 
 
@@ -37,7 +39,6 @@ def _print_banner():
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
     print(f"{_ORANGE}  GOcontroll Test Suite  v{_PKG_VERSION}{_RESET}")
-    print()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -45,28 +46,35 @@ def _print_banner():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _getch():
-    """Return one keypress as bytes; escape sequences are read in full."""
+    """Return one keypress as bytes; escape sequences are read in full.
+    Lone Esc returns b'\\x1b'; sequences like arrow keys return b'\\x1b[A' etc.
+    Uses os.read() directly to bypass Python's buffered IO layer."""
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
-        ch = sys.stdin.buffer.read(1)
-        if ch == b"\x1b":
-            ch += sys.stdin.buffer.read(2)
+        ch = os.read(fd, 1)
+        if ch == b"\x1b" and select.select([fd], [], [], 0.1)[0]:
+            ch += os.read(fd, 2)
         return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
-def _draw(options, selected, first=False):
-    lines = [_SEP]
+def _draw(description, options, selected, first=False, icons=None):
+    lines = [_SEP, f"  {description}", _SEP]
     for i, opt in enumerate(options):
-        if i == selected:
-            lines.append(f"{_CYAN}  ► {opt}{_RESET}")
+        if icons and i < len(icons) and icons[i] is not None:
+            color = _GREEN if icons[i] else _RED
+            mark = f"  {color}{'✓' if icons[i] else '✗'}{_RESET}"
         else:
-            lines.append(f"    {opt}")
+            mark = ""
+        if i == selected:
+            lines.append(f"{_CYAN}  ► {opt}{_RESET}{mark}")
+        else:
+            lines.append(f"    {opt}{mark}")
     lines.append(_SEP)
-    lines.append(f"{_DARK_GREY}  ↑/↓ navigate   Enter select   ← back{_RESET}")
+    lines.append(f"{_DARK_GREY}  ↑/↓ navigate   Enter select   Esc back{_RESET}")
     if not first:
         sys.stdout.write(f"\033[{len(lines)}A")
     for line in lines:
@@ -74,12 +82,14 @@ def _draw(options, selected, first=False):
     sys.stdout.flush()
 
 
-def _select(options):
+def _select(description, options, icons=None):
     """
     Interactive arrow-key menu. Returns selected index, or -1 for back/quit.
     Falls back to numbered input when stdin is not a TTY.
     """
     if not _HAS_TTY or not sys.stdin.isatty():
+        print(_SEP)
+        print(f"  {description}")
         print(_SEP)
         for i, opt in enumerate(options, 1):
             print(f"  {i}. {opt}")
@@ -103,18 +113,18 @@ def _select(options):
     sys.stdout.write("\033[?25l")
     sys.stdout.flush()
     try:
-        _draw(options, selected, first=True)
+        _draw(description, options, selected, first=True, icons=icons)
         while True:
             key = _getch()
             if key == b"\x1b[A":                           # ↑
                 selected = (selected - 1) % n
-                _draw(options, selected)
+                _draw(description, options, selected, icons=icons)
             elif key == b"\x1b[B":                         # ↓
                 selected = (selected + 1) % n
-                _draw(options, selected)
+                _draw(description, options, selected, icons=icons)
             elif key in (b"\r", b"\n"):                    # Enter
                 return selected
-            elif key in (b"\x1b[D", b"q",                 # ← or q (back)
+            elif key in (b"\x1b", b"\x1b[D",               # Esc or ← (back)
                          b"\x03", b"\x04"):               # Ctrl-C / Ctrl-D
                 return -1
     finally:
@@ -135,35 +145,22 @@ def _confirm(prompt):
     return answer in ("y", "yes", "")
 
 
+
 def _run_test(name, func, visual_confirm=False):
-    print(f"\nRunning: {name}")
-    print("-" * 40)
-    if visual_confirm:
-        print("  Watch the controller LEDs, then confirm below.")
-        print()
-        func()
-        passed = _confirm("Did all LEDs flash red, green and blue correctly?")
-    else:
-        passed = func()
-    icon = f"{_GREEN}✓{_RESET}" if passed else f"{_RED}✗{_RESET}"
-    print(f"\n  {icon}  {name}")
+    print(_SEP)
+    print(f"  Running {name}..")
+    print(_SEP)
+    try:
+        if visual_confirm:
+            print("  Watch the controller LEDs, then confirm below.")
+            print()
+            func()
+            passed = _confirm("Did all LEDs flash red, green and blue correctly?")
+        else:
+            passed = func()
+    except Exception:
+        passed = False
     return passed
-
-
-def _run_all():
-    results = [(name, _run_test(name, func, confirm)) for name, func, confirm in TESTS]
-    all_passed = all(passed for _, passed in results)
-
-    print()
-    print("=" * 40)
-    print("Summary")
-    print("=" * 40)
-    for name, passed in results:
-        icon = f"{_GREEN}✓{_RESET}" if passed else f"{_RED}✗{_RESET}"
-        print(f"  {icon}  {name}")
-    print()
-    print("All tests passed!" if all_passed else "One or more tests failed.")
-    return all_passed
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -171,27 +168,29 @@ def _run_all():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    options = [name for name, _, _ in TESTS] + ["Run all tests"]
+    test_results = {}  # test index → True/False
 
-    while True:
-        _print_banner()
-        choice = _select(options)
+    try:
+        while True:
+            options = [name for name, _, _ in TESTS] + ["Run all tests"]
+            icons   = [test_results.get(i) for i in range(len(TESTS))] + [None]
 
-        if choice == -1:
-            sys.exit(0)
+            _print_banner()
+            choice = _select("Select the test you want to perform.", options, icons=icons)
 
-        _print_banner()
+            if choice == -1:
+                sys.exit(0)
 
-        if choice == len(TESTS):
-            _run_all()
-        else:
-            name, func, confirm = TESTS[choice]
-            _run_test(name, func, confirm)
-
-        try:
-            input("\n  Press Enter to return to menu...")
-        except (EOFError, KeyboardInterrupt):
-            sys.exit(0)
+            if choice == len(TESTS):
+                for i, (name, func, confirm) in enumerate(TESTS):
+                    _print_banner()
+                    test_results[i] = _run_test(name, func, confirm)
+            else:
+                _print_banner()
+                name, func, confirm = TESTS[choice]
+                test_results[choice] = _run_test(name, func, confirm)
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 
 if __name__ == "__main__":

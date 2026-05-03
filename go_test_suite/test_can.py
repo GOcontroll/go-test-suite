@@ -1,39 +1,55 @@
-"""CAN bus test — adapted from go-test-can"""
+"""CAN bus test"""
 
+import time
 import can
 import netifaces
 
+_counter = [0]
+
+
+def _recv_matching(bus, arb_id, timeout=1.0):
+    """Receive until a frame with the expected arb_id arrives, or timeout expires.
+    Silently discards any frames with a different ID (stale from a previous run)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        msg = bus.recv(timeout=remaining)
+        if msg is None:
+            return False
+        if msg.arbitration_id == arb_id:
+            return True
+
+
+def _test_pair(ch_a, ch_b, id_a, id_b):
+    """Bidirectional test: ch_a sends id_a, ch_b sends id_b; verify each receives the other."""
+    with can.Bus(interface="socketcan", channel=ch_a) as bus_a:
+        with can.Bus(interface="socketcan", channel=ch_b) as bus_b:
+            while bus_a.recv(timeout=0) is not None:
+                pass
+            while bus_b.recv(timeout=0) is not None:
+                pass
+            bus_a.send(can.Message(arbitration_id=id_a, data=[0x55], is_extended_id=False))
+            bus_b.send(can.Message(arbitration_id=id_b, data=[0xAA], is_extended_id=False))
+            return (_recv_matching(bus_b, id_a) and _recv_matching(bus_a, id_b))
+
 
 def run():
+    _counter[0] = (_counter[0] % 255) + 1
+    c = _counter[0]
+
     ifaces = netifaces.interfaces()
     test_pass = True
 
     if "can0" in ifaces and "can1" in ifaces:
-        with can.Bus(interface="socketcan", channel="can0") as bus1:
-            with can.Bus(interface="socketcan", channel="can1") as bus2:
-                bus1.send(can.Message(arbitration_id=1, data=[1]))
-                bus2.send(can.Message(arbitration_id=2, data=[2]))
-                if bus2.recv(timeout=1) is None or bus1.recv(timeout=1) is None:
-                    test_pass = False
-                    print("ERR: No communication between can0 and can1")
+        if not _test_pair("can0", "can1", c, c + 256):
+            test_pass = False
     else:
         test_pass = False
-        print("ERR: missing can interfaces can0 and/or can1")
 
     if "can2" in ifaces and "can3" in ifaces:
-        with can.Bus(interface="socketcan", channel="can2") as bus3:
-            with can.Bus(interface="socketcan", channel="can3") as bus4:
-                bus3.send(can.Message(arbitration_id=3, data=[3]))
-                bus4.send(can.Message(arbitration_id=4, data=[4]))
-                if bus4.recv(timeout=1) is None or bus3.recv(timeout=1) is None:
-                    test_pass = False
-                    print("ERR: No communication between can2 and can3")
-    else:
-        print("NOTE: only 2 CAN interfaces")
-
-    if test_pass:
-        print("PASS: All CAN busses functioning!")
-    else:
-        print("FAIL: CAN test failed")
+        if not _test_pair("can2", "can3", c + 512, c + 768):
+            test_pass = False
 
     return test_pass
