@@ -35,8 +35,8 @@ jobs:
                    "${DIST}"
 
           # --- Python package files -----------------------------------------------
-          install -Dm644 go_test_suite/__init__.py \
-            "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/__init__.py"
+          printf '__version__ = "%s"\n' "${VERSION}" \
+            > "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/__init__.py"
           install -Dm644 go_test_suite/suite.py \
             "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/suite.py"
           install -Dm644 go_test_suite/test_can.py \

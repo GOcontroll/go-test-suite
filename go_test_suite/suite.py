@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """GOcontroll Test Suite - post-assembly hardware test runner"""
 
-import subprocess
 import sys
 
+from go_test_suite import __version__ as _PKG_VERSION
 from go_test_suite import test_can, test_leds
 
 try:
@@ -13,34 +13,35 @@ try:
 except ImportError:
     _HAS_TTY = False
 
-_CYAN  = "\033[96m"   # light cyan — matches inquire::Select default
-_GREEN = "\033[92m"
-_RED   = "\033[91m"
-_RESET = "\033[0m"
+_ORANGE    = "\x1b[38;2;255;102;0m"
+_CYAN      = "\033[96m"
+_GREEN     = "\033[92m"
+_RED       = "\033[91m"
+_DARK_GREY = "\033[90m"
+_RESET     = "\033[0m"
 
-# Each entry: (display name, function, visual_confirm)
-# visual_confirm=True: test has no automated pass/fail; user is asked after running.
+_SEP = "  ------------------------------------"
+
+# (display name, function, visual_confirm)
 TESTS = [
-    ("CAN bus test  (can0 \u2194 can1,  can2 \u2194 can3)", test_can.run,   False),
+    ("CAN bus test  (can0 ↔ can1,  can2 ↔ can3)", test_can.run,   False),
     ("LED test  (4x RGB case LEDs)",                        test_leds.run,  True),
 ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Banner  (same style as go-identify)
+# Banner
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _print_banner(version):
-    text = f"  GOcontroll Test Suite  V{version}  "
-    w = max(len(text), 60)
-    print(f"╔{'═' * w}╗")
-    print(f"║{text:<{w}}║")
-    print(f"╚{'═' * w}╝")
+def _print_banner():
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+    print(f"{_ORANGE}  GOcontroll Test Suite  v{_PKG_VERSION}{_RESET}")
     print()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Interactive arrow-key menu  (matches inquire::Select look and feel)
+# Interactive arrow-key menu
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _getch():
@@ -57,15 +58,15 @@ def _getch():
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
-def _draw(prompt, options, selected, first=False):
-    lines = [f"{_CYAN}?{_RESET} {prompt}"]
+def _draw(options, selected, first=False):
+    lines = [_SEP]
     for i, opt in enumerate(options):
         if i == selected:
-            lines.append(f"{_CYAN}> {opt}{_RESET}")
+            lines.append(f"{_CYAN}  ► {opt}{_RESET}")
         else:
-            lines.append(f"  {opt}")
-    lines.append(f"{_CYAN}[\u2191\u2193 to move, enter to select]{_RESET}")
-
+            lines.append(f"    {opt}")
+    lines.append(_SEP)
+    lines.append(f"{_DARK_GREY}  ↑/↓ navigate   Enter select   ← back{_RESET}")
     if not first:
         sys.stdout.write(f"\033[{len(lines)}A")
     for line in lines:
@@ -73,16 +74,16 @@ def _draw(prompt, options, selected, first=False):
     sys.stdout.flush()
 
 
-def _select(prompt, options):
+def _select(options):
     """
-    Interactive arrow-key menu.  Returns the selected index, or -1 for quit.
+    Interactive arrow-key menu. Returns selected index, or -1 for back/quit.
     Falls back to numbered input when stdin is not a TTY.
     """
     if not _HAS_TTY or not sys.stdin.isatty():
-        print(f"? {prompt}")
+        print(_SEP)
         for i, opt in enumerate(options, 1):
             print(f"  {i}. {opt}")
-        print()
+        print(_SEP)
         try:
             choice = input("Enter number (q to quit): ").strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -99,40 +100,31 @@ def _select(prompt, options):
 
     selected = 0
     n = len(options)
-    sys.stdout.write("\033[?25l")   # hide cursor
+    sys.stdout.write("\033[?25l")
     sys.stdout.flush()
     try:
-        _draw(prompt, options, selected, first=True)
+        _draw(options, selected, first=True)
         while True:
             key = _getch()
-            if key == b"\x1b[A":            # ↑
+            if key == b"\x1b[A":                           # ↑
                 selected = (selected - 1) % n
-                _draw(prompt, options, selected)
-            elif key == b"\x1b[B":          # ↓
+                _draw(options, selected)
+            elif key == b"\x1b[B":                         # ↓
                 selected = (selected + 1) % n
-                _draw(prompt, options, selected)
-            elif key in (b"\r", b"\n"):     # Enter
+                _draw(options, selected)
+            elif key in (b"\r", b"\n"):                    # Enter
                 return selected
-            elif key in (b"\x03", b"\x04"): # Ctrl-C / Ctrl-D
+            elif key in (b"\x1b[D", b"q",                 # ← or q (back)
+                         b"\x03", b"\x04"):               # Ctrl-C / Ctrl-D
                 return -1
     finally:
-        sys.stdout.write("\033[?25h")       # restore cursor
+        sys.stdout.write("\033[?25h")
         sys.stdout.flush()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test runners
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _run_quiet(cmd):
-    try:
-        r = subprocess.run(cmd, capture_output=True, timeout=5)
-        if r.returncode == 0:
-            return r.stdout.decode("utf-8", errors="replace").strip()
-    except Exception:
-        pass
-    return None
-
 
 def _confirm(prompt):
     """Ask a yes/no question; returns True for yes (default)."""
@@ -153,7 +145,7 @@ def _run_test(name, func, visual_confirm=False):
         passed = _confirm("Did all LEDs flash red, green and blue correctly?")
     else:
         passed = func()
-    icon = f"{_GREEN}\u2713{_RESET}" if passed else f"{_RED}\u2717{_RESET}"
+    icon = f"{_GREEN}✓{_RESET}" if passed else f"{_RED}✗{_RESET}"
     print(f"\n  {icon}  {name}")
     return passed
 
@@ -167,7 +159,7 @@ def _run_all():
     print("Summary")
     print("=" * 40)
     for name, passed in results:
-        icon = f"{_GREEN}\u2713{_RESET}" if passed else f"{_RED}\u2717{_RESET}"
+        icon = f"{_GREEN}✓{_RESET}" if passed else f"{_RED}✗{_RESET}"
         print(f"  {icon}  {name}")
     print()
     print("All tests passed!" if all_passed else "One or more tests failed.")
@@ -179,24 +171,27 @@ def _run_all():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    version = _run_quiet(["dpkg-query", "-W", "-f=${Version}", "go-test-suite"]) or "1.0.0"
-    _print_banner(version)
-
     options = [name for name, _, _ in TESTS] + ["Run all tests"]
-    choice = _select("What do you want to test?", options)
 
-    if choice == -1:
-        sys.exit(0)
+    while True:
+        _print_banner()
+        choice = _select(options)
 
-    print()
+        if choice == -1:
+            sys.exit(0)
 
-    if choice == len(TESTS):    # "Run all tests"
-        passed = _run_all()
-    else:
-        name, func, confirm = TESTS[choice]
-        passed = _run_test(name, func, confirm)
+        _print_banner()
 
-    sys.exit(0 if passed else 1)
+        if choice == len(TESTS):
+            _run_all()
+        else:
+            name, func, confirm = TESTS[choice]
+            _run_test(name, func, confirm)
+
+        try:
+            input("\n  Press Enter to return to menu...")
+        except (EOFError, KeyboardInterrupt):
+            sys.exit(0)
 
 
 if __name__ == "__main__":
