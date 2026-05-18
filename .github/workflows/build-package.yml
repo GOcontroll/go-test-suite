@@ -29,20 +29,41 @@ jobs:
           BUILD="${RUNNER_TEMP}/${PACKAGE}_${VERSION}_${ARCH}"
           DIST="${RUNNER_TEMP}/dist"
 
+          PKG_DIR="${BUILD}/usr/lib/python3/dist-packages/go_test_suite"
           mkdir -p "${BUILD}/DEBIAN" \
-                   "${BUILD}/usr/lib/python3/dist-packages/go_test_suite" \
+                   "${PKG_DIR}/sounds" \
                    "${BUILD}/usr/bin" \
                    "${DIST}"
 
           # --- Python package files -----------------------------------------------
           printf '__version__ = "%s"\n' "${VERSION}" \
-            > "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/__init__.py"
-          install -Dm644 go_test_suite/suite.py \
-            "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/suite.py"
-          install -Dm644 go_test_suite/test_can.py \
-            "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/test_can.py"
-          install -Dm644 go_test_suite/test_leds.py \
-            "${BUILD}/usr/lib/python3/dist-packages/go_test_suite/test_leds.py"
+            > "${PKG_DIR}/__init__.py"
+          install -Dm644 go_test_suite/suite.py      "${PKG_DIR}/suite.py"
+          install -Dm644 go_test_suite/platform.py   "${PKG_DIR}/platform.py"
+          install -Dm644 go_test_suite/test_can.py   "${PKG_DIR}/test_can.py"
+          install -Dm644 go_test_suite/test_leds.py  "${PKG_DIR}/test_leds.py"
+          install -Dm644 go_test_suite/test_audio.py "${PKG_DIR}/test_audio.py"
+          install -Dm644 go_test_suite/test_rtc.py   "${PKG_DIR}/test_rtc.py"
+
+          # --- Bundled test tone (440 Hz sine, 1s, 16-bit mono 48 kHz) -----------
+          python3 - "${PKG_DIR}/sounds/test.wav" << 'PYEOF'
+          import math, struct, sys, wave
+          out = sys.argv[1]
+          rate, dur, freq, amp = 48000, 1.0, 440.0, 0.6
+          n = int(rate * dur)
+          fade = int(0.01 * rate)
+          frames = bytearray()
+          for i in range(n):
+              g = 1.0
+              if i < fade:        g = i / fade
+              elif i > n - fade:  g = (n - i) / fade
+              s = int(amp * g * 32767 * math.sin(2 * math.pi * freq * i / rate))
+              frames += struct.pack('<h', s)
+          with wave.open(out, 'wb') as w:
+              w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+              w.writeframes(bytes(frames))
+          PYEOF
+          chmod 644 "${PKG_DIR}/sounds/test.wav"
 
           # --- Entry point script -------------------------------------------------
           cat > "${BUILD}/usr/bin/go-test-suite" << 'EOF'
@@ -58,14 +79,17 @@ jobs:
           Version: ${VERSION}
           Architecture: ${ARCH}
           Maintainer: GOcontroll B.V. <info@gocontroll.com>
-          Depends: python3, python3-can, python3-netifaces, python3-smbus2
+          Depends: python3, python3-can, python3-netifaces, python3-smbus2, alsa-utils
           Section: utils
           Priority: optional
           Homepage: https://gocontroll.com
           Description: GOcontroll test utility for Moduline controllers
            Post-assembly hardware test runner for GOcontroll Moduline controllers.
-           Provides an interactive menu to select and run hardware tests, including
-           CAN bus loopback tests for Moduline Mini, Moduline 4 and Moduline Display.
+           Provides an interactive menu that auto-detects the platform and offers
+           the applicable tests: CAN loopback on Moduline Mini / Moduline 4 /
+           Moduline Display, LED test on Moduline Mini / Moduline 4, audio output
+           test on Moduline Display, and RTC tick test where an external battery
+           backed RTC is present.
           CONTROL
 
           # --- Build --------------------------------------------------------------

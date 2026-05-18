@@ -6,7 +6,7 @@ import select
 import sys
 
 from go_test_suite import __version__ as _PKG_VERSION
-from go_test_suite import test_can, test_leds
+from go_test_suite import platform, test_audio, test_can, test_leds, test_rtc
 
 try:
     import tty
@@ -24,11 +24,36 @@ _RESET     = "\033[0m"
 
 _SEP = "  ------------------------------------"
 
-# (display name, function, visual_confirm)
-TESTS = [
-    ("CAN tests", test_can.run,  False),
-    ("LED test",  test_leds.run, True),
-]
+_PLATFORM = platform.detect()
+
+
+_LED_CONFIRM = (
+    "Watch the controller LEDs, then confirm below.",
+    "Did all LEDs flash red, green and blue correctly?",
+)
+_AUDIO_CONFIRM = (
+    "Listen for the test tone, then confirm below.",
+    "Did you hear the test tone?",
+)
+
+
+def _build_tests():
+    """Return the list of (display name, function, confirm) tuples for the
+    tests that are applicable on this platform. `confirm` is either None
+    (no visual confirmation required) or a (pre_message, question) pair."""
+    tests = []
+    if _PLATFORM["can_interfaces"]:
+        tests.append(("CAN tests",  test_can.run,   None))
+    if _PLATFORM["has_leds"]:
+        tests.append(("LED test",   test_leds.run,  _LED_CONFIRM))
+    if _PLATFORM["has_audio"]:
+        tests.append(("Audio test", test_audio.run, _AUDIO_CONFIRM))
+    if _PLATFORM["has_rtc"]:
+        tests.append(("RTC test",   test_rtc.run,   None))
+    return tests
+
+
+TESTS = _build_tests()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +64,7 @@ def _print_banner():
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
     print(f"{_ORANGE}  GOcontroll Test Suite  v{_PKG_VERSION}{_RESET}")
+    print(f"{_DARK_GREY}  {_PLATFORM['model']}{_RESET}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -146,16 +172,17 @@ def _confirm(prompt):
 
 
 
-def _run_test(name, func, visual_confirm=False):
+def _run_test(name, func, confirm):
     print(_SEP)
     print(f"  Running {name}..")
     print(_SEP)
     try:
-        if visual_confirm:
-            print("  Watch the controller LEDs, then confirm below.")
+        if confirm is not None:
+            pre_message, question = confirm
+            print(f"  {pre_message}")
             print()
-            func()
-            passed = _confirm("Did all LEDs flash red, green and blue correctly?")
+            ok = func()
+            passed = ok and _confirm(question)
         else:
             passed = func()
     except Exception:
@@ -169,6 +196,13 @@ def _run_test(name, func, visual_confirm=False):
 
 def main():
     test_results = {}  # test index → True/False
+
+    if not TESTS:
+        _print_banner()
+        print(_SEP)
+        print("  No applicable tests for this platform.")
+        print(_SEP)
+        sys.exit(0)
 
     try:
         while True:

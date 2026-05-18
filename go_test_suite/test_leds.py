@@ -86,3 +86,5 @@ def run():
 
     for led in leds:
         led.set_brightness(0)
+
+    return True

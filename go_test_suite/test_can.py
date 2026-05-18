@@ -1,4 +1,4 @@
-"""CAN bus test"""
+"""CAN bus test - loopback between consecutive pairs of CAN interfaces."""
 
 import time
 import can
@@ -32,24 +32,31 @@ def _test_pair(ch_a, ch_b, id_a, id_b):
                 pass
             bus_a.send(can.Message(arbitration_id=id_a, data=[0x55], is_extended_id=False))
             bus_b.send(can.Message(arbitration_id=id_b, data=[0xAA], is_extended_id=False))
-            return (_recv_matching(bus_b, id_a) and _recv_matching(bus_a, id_b))
+            return _recv_matching(bus_b, id_a) and _recv_matching(bus_a, id_b)
+
+
+def _can_pairs():
+    """Return consecutive (canN, canN+1) pairs that both exist as interfaces."""
+    ifaces = set(netifaces.interfaces())
+    pairs = []
+    n = 0
+    while f"can{n}" in ifaces and f"can{n + 1}" in ifaces:
+        pairs.append((f"can{n}", f"can{n + 1}"))
+        n += 2
+    return pairs
 
 
 def run():
     _counter[0] = (_counter[0] % 255) + 1
     c = _counter[0]
 
-    ifaces = netifaces.interfaces()
+    pairs = _can_pairs()
+    if not pairs:
+        return False
+
     test_pass = True
-
-    if "can0" in ifaces and "can1" in ifaces:
-        if not _test_pair("can0", "can1", c, c + 256):
+    for idx, (a, b) in enumerate(pairs):
+        offset = idx * 1024
+        if not _test_pair(a, b, c + offset, c + offset + 256):
             test_pass = False
-    else:
-        test_pass = False
-
-    if "can2" in ifaces and "can3" in ifaces:
-        if not _test_pair("can2", "can3", c + 512, c + 768):
-            test_pass = False
-
     return test_pass
