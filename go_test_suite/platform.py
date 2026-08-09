@@ -7,6 +7,7 @@ as it follows the same kernel conventions.
 
 import os
 import re
+import shutil
 
 try:
     import netifaces
@@ -19,8 +20,12 @@ _MODEL_PATH    = "/proc/device-tree/model"
 _CARDS_PATH    = "/proc/asound/cards"
 _LED_SYSFS_FMT = "/sys/class/leds/case-led{}/brightness"
 _RTC_SYSFS     = "/sys/class/rtc"
+_DRM_SYSFS     = "/sys/class/drm"
+_INPUT_SYSFS   = "/sys/class/input"
 _AUDIO_CARDS   = ("tas2505audio",)
 _RTC_CHIPS     = ("pcf85063",)
+
+_ABS_MT_POSITION_X = 0x35
 
 
 def _read_model():
@@ -72,15 +77,84 @@ def _find_external_rtc():
     return None
 
 
+def _find_display():
+    """Return (connector sysfs path, first mode) for the first connected DRM
+    connector, or (None, None) when nothing is attached.
+
+    Entries without a dash are the card and render nodes (cardN, renderDN,
+    version); only the connector directories carry status and modes.
+    """
+    try:
+        entries = sorted(os.listdir(_DRM_SYSFS))
+    except OSError:
+        return None, None
+    for entry in entries:
+        if "-" not in entry:
+            continue
+        path = os.path.join(_DRM_SYSFS, entry)
+        try:
+            with open(os.path.join(path, "status")) as f:
+                if f.read().strip() != "connected":
+                    continue
+            with open(os.path.join(path, "modes")) as f:
+                mode = f.readline().strip() or None
+        except OSError:
+            continue
+        return path, mode
+    return None, None
+
+
+def _find_touch():
+    """Return /dev/input/eventN of the first multitouch digitiser, or None.
+
+    Matched on the ABS_MT_POSITION_X capability bit rather than on a driver
+    name, so a different controller on a future panel still works. The av123
+    panel has no touch controller at all - no input devices are created there,
+    which is normal and not a fault.
+    """
+    try:
+        entries = sorted(os.listdir(_INPUT_SYSFS))
+    except OSError:
+        return None
+    for entry in entries:
+        if not entry.startswith("event"):
+            continue
+        caps = os.path.join(_INPUT_SYSFS, entry, "device", "capabilities", "abs")
+        try:
+            with open(caps) as f:
+                mask = int(f.read().strip().replace(" ", ""), 16)
+        except (OSError, ValueError):
+            continue
+        if mask & (1 << _ABS_MT_POSITION_X):
+            node = os.path.join("/dev/input", entry)
+            if os.path.exists(node):
+                return node
+    return None
+
+
 def detect():
     audio_card = _detect_audio_card()
     rtc_path = _find_external_rtc()
+    display_connector, display_mode = _find_display()
+    # kmscube ships with the display rootfs variant only, so requiring it keeps
+    # the display test off headless units without pulling it in as a package
+    # dependency. A connected connector alone is not enough - a headless board
+    # with a stray HDMI bridge would otherwise offer a test it cannot run.
+    has_display = display_connector is not None and shutil.which("kmscube") is not None
+    touch_device = _find_touch()
     return {
-        "model":          _read_model(),
-        "has_leds":       _has_leds(),
-        "has_audio":      audio_card is not None,
-        "audio_card":     audio_card,
-        "can_interfaces": _list_can(),
-        "has_rtc":        rtc_path is not None,
-        "rtc_path":       rtc_path,
+        "model":             _read_model(),
+        "has_leds":          _has_leds(),
+        "has_audio":         audio_card is not None,
+        "audio_card":        audio_card,
+        "can_interfaces":    _list_can(),
+        "has_rtc":           rtc_path is not None,
+        "rtc_path":          rtc_path,
+        "has_display":       has_display,
+        "display_connector": display_connector,
+        "display_mode":      display_mode,
+        # The touch test draws on /dev/fb0 directly, so it needs a framebuffer
+        # but not kmscube - hence its own condition rather than has_display.
+        "has_touch":         touch_device is not None and os.path.exists("/dev/fb0"),
+        "touch_device":      touch_device,
     }

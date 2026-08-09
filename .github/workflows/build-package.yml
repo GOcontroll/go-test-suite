@@ -44,6 +44,8 @@ jobs:
           install -Dm644 go_test_suite/test_leds.py  "${PKG_DIR}/test_leds.py"
           install -Dm644 go_test_suite/test_audio.py "${PKG_DIR}/test_audio.py"
           install -Dm644 go_test_suite/test_rtc.py   "${PKG_DIR}/test_rtc.py"
+          install -Dm644 go_test_suite/test_display.py "${PKG_DIR}/test_display.py"
+          install -Dm644 go_test_suite/test_touch.py   "${PKG_DIR}/test_touch.py"
 
           # --- Bundled test tone (440 Hz sine, 1s, 16-bit mono 48 kHz) -----------
           python3 - "${PKG_DIR}/sounds/test.wav" << 'PYEOF'
@@ -88,8 +90,10 @@ jobs:
            Provides an interactive menu that auto-detects the platform and offers
            the applicable tests: CAN loopback on Moduline Mini / Moduline 4 /
            Moduline Display, LED test on Moduline Mini / Moduline 4, audio output
-           test on Moduline Display, and RTC tick test where an external battery
-           backed RTC is present.
+           test on Moduline Display, RTC tick test where an external battery
+           backed RTC is present, a display/GPU test where a connected panel and
+           kmscube are found, and a graphical touch test where a multitouch
+           digitiser is present.
           CONTROL
 
           # --- Build --------------------------------------------------------------

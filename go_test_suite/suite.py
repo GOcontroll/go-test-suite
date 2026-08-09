@@ -6,7 +6,8 @@ import select
 import sys
 
 from go_test_suite import __version__ as _PKG_VERSION
-from go_test_suite import platform, test_audio, test_can, test_leds, test_rtc
+from go_test_suite import (platform, test_audio, test_can, test_display,
+                           test_leds, test_rtc, test_touch)
 
 try:
     import tty
@@ -35,6 +36,19 @@ _AUDIO_CONFIRM = (
     "Listen for the test tone, then confirm below.",
     "Did you hear the test tone?",
 )
+_DISPLAY_CONFIRM = (
+    "Watch the panel - a spinning cube runs for 20 seconds. The console is\n"
+    "  temporarily removed from the screen and comes back afterwards.",
+    "Did you see the spinning cube for the whole run?",
+)
+# Question is None: the touch test can only pass by the operator hitting all
+# five dots, so asking them to confirm afterwards would add nothing.
+_TOUCH_MESSAGE = (
+    "Five grey dots appear on the panel - four corners and the centre.\n"
+    "  Touch each one; it turns green when registered. The test passes once\n"
+    "  all five are green, and times out after 90 seconds.",
+    None,
+)
 
 
 def _build_tests():
@@ -50,6 +64,12 @@ def _build_tests():
         tests.append(("Audio test", test_audio.run, _AUDIO_CONFIRM))
     if _PLATFORM["has_rtc"]:
         tests.append(("RTC test",   test_rtc.run,   None))
+    if _PLATFORM["has_display"]:
+        tests.append(("Display test", test_display.run, _DISPLAY_CONFIRM))
+    if _PLATFORM["has_touch"]:
+        # No operator question: the test only passes once all five dots have
+        # actually been hit, so the pass is already the operator's own doing.
+        tests.append(("Touch test",   test_touch.run,   _TOUCH_MESSAGE))
     return tests
 
 
@@ -182,7 +202,9 @@ def _run_test(name, func, confirm):
             print(f"  {pre_message}")
             print()
             ok = func()
-            passed = ok and _confirm(question)
+            # A question of None means the test proves itself and needs no
+            # operator verdict on top of its own result.
+            passed = ok and (question is None or _confirm(question))
         else:
             passed = func()
     except Exception:
