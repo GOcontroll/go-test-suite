@@ -37,9 +37,10 @@ _AUDIO_CONFIRM = (
     "Did you hear the test tone?",
 )
 _DISPLAY_CONFIRM = (
-    "Watch the panel - a spinning cube runs for 20 seconds. The console is\n"
-    "  temporarily removed from the screen and comes back afterwards.",
-    "Did you see the spinning cube for the whole run?",
+    "Watch the panel - a spinning cube appears. Press any key to stop it, or\n"
+    "  let it run out after 20 seconds. The console is temporarily removed\n"
+    "  from the screen and comes back afterwards.",
+    "Did you see the spinning cube?",
 )
 # Question is None: the touch test can only pass by the operator hitting all
 # five dots, so asking them to confirm afterwards would add nothing.
