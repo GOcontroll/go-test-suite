@@ -15,10 +15,19 @@ try:
 except ImportError:
     _HAS_NETIFACES = False
 
+try:
+    import smbus2
+    _HAS_SMBUS = True
+except ImportError:
+    _HAS_SMBUS = False
+
 
 _MODEL_PATH    = "/proc/device-tree/model"
 _CARDS_PATH    = "/proc/asound/cards"
 _LED_SYSFS_FMT = "/sys/class/leds/case-led{}/brightness"
+_LED_I2C_BUS   = 2
+_LED_I2C_ADDR  = 0x14
+_LED_REG_ENABLE = 0x00
 _RTC_SYSFS     = "/sys/class/rtc"
 _DRM_SYSFS     = "/sys/class/drm"
 _INPUT_SYSFS   = "/sys/class/input"
@@ -36,8 +45,35 @@ def _read_model():
         return "unknown"
 
 
-def _has_leds():
-    return os.path.isfile(_LED_SYSFS_FMT.format(1))
+def _probe_i2c_leds():
+    """Return True when the I2C LED driver answers on its bus.
+
+    Reading the enable register is enough to tell the chip is there and leaves
+    the LEDs as they were, so probing costs nothing on units without it.
+    """
+    if not _HAS_SMBUS or not os.path.exists(f"/dev/i2c-{_LED_I2C_BUS}"):
+        return False
+    try:
+        with smbus2.SMBus(_LED_I2C_BUS) as bus:
+            bus.read_byte_data(_LED_I2C_ADDR, _LED_REG_ENABLE)
+    except OSError:
+        return False
+    return True
+
+
+def _detect_leds():
+    """Return the backend driving the case LEDs, or None when there are none.
+
+    Both backends have to be probed because both are supported by the LED test:
+    some controllers expose the LEDs as sysfs class devices, others hang the
+    same four RGB LEDs off an I2C driver with no sysfs entry at all. Checking
+    sysfs alone hides the LED test on the latter.
+    """
+    if os.path.isfile(_LED_SYSFS_FMT.format(1)):
+        return "sysfs"
+    if _probe_i2c_leds():
+        return "i2c"
+    return None
 
 
 def _detect_audio_card():
@@ -133,6 +169,7 @@ def _find_touch():
 
 
 def detect():
+    led_backend = _detect_leds()
     audio_card = _detect_audio_card()
     rtc_path = _find_external_rtc()
     display_connector, display_mode = _find_display()
@@ -144,7 +181,8 @@ def detect():
     touch_device = _find_touch()
     return {
         "model":             _read_model(),
-        "has_leds":          _has_leds(),
+        "has_leds":          led_backend is not None,
+        "led_backend":       led_backend,
         "has_audio":         audio_card is not None,
         "audio_card":        audio_card,
         "can_interfaces":    _list_can(),
