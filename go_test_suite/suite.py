@@ -64,12 +64,9 @@ def _build_tests():
     if _PLATFORM["has_audio"]:
         tests.append(("Audio test", test_audio.run, _AUDIO_CONFIRM))
     if _PLATFORM["has_rtc"]:
-        # Known limitation: has_rtc is only true once a pcf85063 is bound under
-        # /sys/class/rtc. A unit whose RTC is missing or fails to probe (the
-        # kernel logs "RTC chip is not present") is never offered the RTC test
-        # and so passes without it - seen on HMI1 units whose device tree
-        # declares a pcf85063 at 3-0051. The expectation should come from the
-        # device tree (an enabled pcf85063 node), not from the chip under test.
+        # has_rtc comes from the device tree, not from the chip under test, so
+        # a declared pcf85063 that failed to probe ("RTC chip is not present",
+        # seen on HMI1 at 3-0051) is offered the test and fails it.
         tests.append(("RTC test",   test_rtc.run,   None))
     if _PLATFORM["has_display"]:
         tests.append(("Display test", test_display.run, _DISPLAY_CONFIRM))
