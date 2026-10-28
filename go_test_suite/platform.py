@@ -23,6 +23,7 @@ except ImportError:
 
 
 _MODEL_PATH    = "/proc/device-tree/model"
+_DT_ROOT       = "/proc/device-tree"
 _CARDS_PATH    = "/proc/asound/cards"
 _LED_SYSFS_FMT = "/sys/class/leds/case-led{}/brightness"
 _LED_I2C_BUS   = 2
@@ -113,6 +114,34 @@ def _find_external_rtc():
     return None
 
 
+def _find_dt_rtc():
+    """Return the device tree path of the first enabled external RTC node, or
+    None when the board does not declare one.
+
+    This is what makes a missing chip a failure instead of a skipped test: the
+    sysfs lookup above only sees a chip whose driver bound, so a unit where the
+    probe failed looks exactly like a unit that never had an RTC.
+    """
+    for root, _dirs, files in os.walk(_DT_ROOT):
+        if "compatible" not in files:
+            continue
+        try:
+            with open(os.path.join(root, "compatible"), "rb") as f:
+                compatible = f.read().decode(errors="replace").lower()
+        except OSError:
+            continue
+        if not any(chip in compatible for chip in _RTC_CHIPS):
+            continue
+        try:
+            with open(os.path.join(root, "status"), "rb") as f:
+                status = f.read().rstrip(b"\x00").decode(errors="replace")
+        except OSError:
+            status = "okay"
+        if status in ("okay", "ok"):
+            return os.path.relpath(root, _DT_ROOT)
+    return None
+
+
 def _find_display():
     """Return (connector sysfs path, first mode) for the first connected DRM
     connector, or (None, None) when nothing is attached.
@@ -172,6 +201,7 @@ def detect():
     led_backend = _detect_leds()
     audio_card = _detect_audio_card()
     rtc_path = _find_external_rtc()
+    rtc_dt_node = _find_dt_rtc()
     display_connector, display_mode = _find_display()
     # kmscube ships with the display rootfs variant only, so requiring it keeps
     # the display test off headless units without pulling it in as a package
@@ -186,8 +216,11 @@ def detect():
         "has_audio":         audio_card is not None,
         "audio_card":        audio_card,
         "can_interfaces":    _list_can(),
-        "has_rtc":           rtc_path is not None,
+        # Offered when the device tree declares the chip, not only when it
+        # bound - otherwise a unit whose RTC failed to probe passes by omission.
+        "has_rtc":           rtc_path is not None or rtc_dt_node is not None,
         "rtc_path":          rtc_path,
+        "rtc_dt_node":       rtc_dt_node,
         "has_display":       has_display,
         "display_connector": display_connector,
         "display_mode":      display_mode,

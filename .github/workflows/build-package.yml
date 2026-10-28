@@ -90,8 +90,8 @@ jobs:
            Provides an interactive menu that auto-detects the platform and offers
            the applicable tests: CAN loopback on Moduline Mini / Moduline 4 /
            Moduline Display, LED test on Moduline Mini / Moduline 4, audio output
-           test on Moduline Display, RTC tick test where an external battery
-           backed RTC is present, a display/GPU test where a connected panel and
+           test on Moduline Display, RTC tick test where the device tree
+           declares an external battery backed RTC, a display/GPU test where a connected panel and
            kmscube are found, and a graphical touch test where a multitouch
            digitiser is present.
           CONTROL
